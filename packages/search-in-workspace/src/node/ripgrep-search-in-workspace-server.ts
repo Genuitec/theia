@@ -19,7 +19,14 @@ import { RawProcess, RawProcessFactory, RawProcessOptions } from '@theia/process
 import { FileUri } from '@theia/core/lib/node/file-uri';
 import URI from '@theia/core/lib/common/uri';
 import { inject, injectable } from 'inversify';
-import { SearchInWorkspaceServer, SearchInWorkspaceOptions, SearchInWorkspaceResult, SearchInWorkspaceClient, LinePreview } from '../common/search-in-workspace-interface';
+import {
+    SearchInWorkspaceServer,
+    SearchInWorkspaceOptions,
+    SearchInWorkspaceResult,
+    SearchInWorkspaceClient,
+    LinePreview,
+    ISearchInWorkspaceService
+} from '../common/search-in-workspace-interface';
 
 export const RgPath = Symbol('RgPath');
 
@@ -71,7 +78,7 @@ interface IRgEnd {
 }
 
 @injectable()
-export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
+export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer, ISearchInWorkspaceService {
 
     // List of ongoing searches, maps search id to a the started rg process.
     private ongoingSearches: Map<number, RawProcess> = new Map();
@@ -127,8 +134,7 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
         return args;
     }
 
-    // Search for the string WHAT in directories ROOTURIS.  Return the assigned search id.
-    search(what: string, rootUris: string[], opts?: SearchInWorkspaceOptions): Promise<number> {
+    searchWithCallback(what: string, rootUris: string[], callbacks: SearchInWorkspaceClient, opts?: SearchInWorkspaceOptions | undefined): Promise<number> {
         // Start the rg process.  Use --vimgrep to get one result per
         // line, --color=always to get color control characters that
         // we'll use to parse the lines.
@@ -168,7 +174,7 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
             }
 
             const errorStr = `An error happened while searching (${errorCode}).`;
-            this.wrapUpSearch(searchId, errorStr);
+            this.wrapUpSearch(searchId, errorStr, callbacks);
         });
 
         // Running counter of results.
@@ -216,8 +222,8 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
                         this.logger.error('Begin message without path. ' + JSON.stringify(obj));
                     }
                 } else if (obj.type === 'end') {
-                    if (currentSearchResult && this.client) {
-                        this.client.onResult(searchId, currentSearchResult);
+                    if (currentSearchResult && callbacks) {
+                        callbacks.onResult(searchId, currentSearchResult);
                     }
                     currentSearchResult = undefined;
                 } else if (obj.type === 'match') {
@@ -264,11 +270,11 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
                         // Did we reach the maximum number of results?
                         if (opts && opts.maxResults && numResults >= opts.maxResults) {
                             rgProcess.kill();
-                            if (currentSearchResult && this.client) {
-                                this.client.onResult(searchId, currentSearchResult);
+                            if (currentSearchResult && callbacks) {
+                                callbacks.onResult(searchId, currentSearchResult);
                             }
                             currentSearchResult = undefined;
-                            this.wrapUpSearch(searchId);
+                            this.wrapUpSearch(searchId, undefined, callbacks);
                             break;
                         }
                     }
@@ -284,10 +290,18 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
                 return;
             }
 
-            this.wrapUpSearch(searchId);
+            this.wrapUpSearch(searchId, undefined, callbacks);
         });
 
         return Promise.resolve(searchId);
+    }
+
+    // Search for the string WHAT in directories ROOTURIS.  Return the assigned search id.
+    search(what: string, rootUris: string[], opts?: SearchInWorkspaceOptions): Promise<number> {
+        if (this.client) {
+            return this.searchWithCallback(what, rootUris, this.client, opts);
+        }
+        return Promise.resolve(-1);
     }
 
     /**
@@ -319,11 +333,11 @@ export class RipgrepSearchInWorkspaceServer implements SearchInWorkspaceServer {
     }
 
     // Send onDone to the client and clean up what we know about search searchId.
-    private wrapUpSearch(searchId: number, error?: string): void {
+    private wrapUpSearch(searchId: number, error?: string, callbacks?: SearchInWorkspaceClient): void {
         if (this.ongoingSearches.delete(searchId)) {
-            if (this.client) {
+            if (callbacks) {
                 this.logger.debug('Sending onDone for ' + searchId, error);
-                this.client.onDone(searchId, error);
+                callbacks.onDone(searchId, error);
             } else {
                 this.logger.debug('Wrapping up search ' + searchId + ' but no client');
             }

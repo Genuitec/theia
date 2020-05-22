@@ -127,10 +127,11 @@ export interface SearchInWorkspaceClient {
      */
     onDone(searchId: number, error?: string): void;
 }
+export type SearchInWorkspaceCallbacks = SearchInWorkspaceClient;
 
 export const SIW_WS_PATH = '/services/search-in-workspace';
 export const SearchInWorkspaceServer = Symbol('SearchInWorkspaceServer');
-export interface SearchInWorkspaceServer extends JsonRpcServer<SearchInWorkspaceClient> {
+export interface SearchInWorkspaceServer extends JsonRpcServer<SearchInWorkspaceClient>, ISearchInWorkspaceService {
     /**
      * Start a search for WHAT in directories ROOTURIS.  Return a unique search id.
      */
@@ -142,4 +143,12 @@ export interface SearchInWorkspaceServer extends JsonRpcServer<SearchInWorkspace
     cancel(searchId: number): Promise<void>;
 
     dispose(): void;
+}
+
+export const ISearchInWorkspaceService = Symbol('ISearchInWorkspaceService');
+
+export interface ISearchInWorkspaceService {
+    searchWithCallback(what: string, rootUris: string[], callbacks: SearchInWorkspaceCallbacks, opts?: SearchInWorkspaceOptions): Promise<number>
+
+    cancel(searchId: number): void;
 }

@@ -164,6 +164,22 @@ export class WorkspaceExtImpl implements WorkspaceExt {
             .then(data => Array.isArray(data) ? data.map(uri => URI.revive(uri)) : []);
     }
 
+    findTextInFiles(query: theia.TextSearchQuery, optionsOrCallback: theia.FindTextInFilesOptions | ((result: theia.TextSearchResult) => void),
+        callbackOrToken?: CancellationToken | ((result: theia.TextSearchResult) => void), token?: CancellationToken): Promise<theia.TextSearchComplete> {
+        let options: theia.FindTextInFilesOptions;
+        let callback: (result: theia.TextSearchResult) => void;
+
+        if (typeof optionsOrCallback === 'object') {
+            options = optionsOrCallback;
+            callback = callbackOrToken as (result: theia.TextSearchResult) => void;
+        } else {
+            options = {};
+            callback = optionsOrCallback;
+            token = callbackOrToken as CancellationToken;
+        }
+        return this.proxy.$findTextInFiles(query, options || {}, callback, token);
+    }
+
     createFileSystemWatcher(globPattern: theia.GlobPattern, ignoreCreateEvents?: boolean, ignoreChangeEvents?: boolean, ignoreDeleteEvents?: boolean): theia.FileSystemWatcher {
         return this.fileSystemWatcherManager.createFileSystemWatcher(globPattern, ignoreCreateEvents, ignoreChangeEvents, ignoreDeleteEvents);
     }

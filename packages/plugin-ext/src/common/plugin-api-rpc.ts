@@ -494,6 +494,8 @@ export interface WorkspaceMain {
     $pickWorkspaceFolder(options: WorkspaceFolderPickOptionsMain): Promise<theia.WorkspaceFolder | undefined>;
     $startFileSearch(includePattern: string, includeFolder: string | undefined, excludePatternOrDisregardExcludes: string | false,
         maxResults: number | undefined, token: theia.CancellationToken): PromiseLike<UriComponents[]>;
+    $findTextInFiles(query: theia.TextSearchQuery, options: theia.FindTextInFilesOptions,
+        callback: (result: theia.TextSearchResult) => void, token?: theia.CancellationToken): Promise<theia.TextSearchComplete>
     $registerTextDocumentContentProvider(scheme: string): Promise<void>;
     $unregisterTextDocumentContentProvider(scheme: string): void;
     $onTextDocumentContentChange(uri: string, content: string): void;
