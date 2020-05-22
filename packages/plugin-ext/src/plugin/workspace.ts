@@ -32,7 +32,15 @@ import {
 } from '../common/plugin-api-rpc';
 import { Path } from '@theia/core/lib/common/path';
 import { RPCProtocol } from '../common/rpc-protocol';
-import { WorkspaceRootsChangeEvent, FileChangeEvent, CreateFilesEventDTO, RenameFilesEventDTO, DeleteFilesEventDTO } from '../common/plugin-api-rpc-model';
+import {
+    WorkspaceRootsChangeEvent,
+    FileChangeEvent,
+    CreateFilesEventDTO,
+    RenameFilesEventDTO,
+    DeleteFilesEventDTO,
+    SearchInWorkspaceResult,
+    Range
+} from '../common/plugin-api-rpc-model';
 import { EditorsAndDocumentsExtImpl } from './editors-and-documents';
 import { InPluginFileSystemWatcherProxy } from './in-plugin-filesystem-watcher-proxy';
 import { URI } from 'vscode-uri';
@@ -42,6 +50,7 @@ import { relative } from '../common/paths-util';
 import { Schemes } from '../common/uri-components';
 import { toWorkspaceFolder } from './type-converters';
 import { MessageRegistryExt } from './message-registry';
+import * as Converter from './type-converters';
 
 export class WorkspaceExtImpl implements WorkspaceExt {
 
@@ -71,6 +80,8 @@ export class WorkspaceExtImpl implements WorkspaceExt {
 
     private folders: theia.WorkspaceFolder[] | undefined;
     private documentContentProviders = new Map<string, theia.TextDocumentContentProvider>();
+    private searchInWorkspaceEmitter: Emitter<{ result: theia.TextSearchResult, searchId: number }> = new Emitter<{ result: theia.TextSearchResult, searchId: number }>();
+    protected workspaceSearchSequence: number = 0;
 
     constructor(rpc: RPCProtocol,
         private editorsAndDocuments: EditorsAndDocumentsExtImpl,
@@ -104,6 +115,33 @@ export class WorkspaceExtImpl implements WorkspaceExt {
         this.folders = newFolders;
 
         this.workspaceFoldersChangedEmitter.fire(delta);
+    }
+
+    $onTextSearchResult(result: SearchInWorkspaceResult, searchRequestId: number): void {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const isObject = (obj: any) => {
+            const type = typeof obj;
+            return type === 'function' || type === 'object' && !!obj;
+        };
+        result.matches.map(next => {
+            const range: Range = {
+                endColumn: next.character + next.length,
+                endLineNumber: next.line + 1,
+                startColumn: next.character,
+                startLineNumber: next.line + 1
+            };
+            const tRange = <theia.Range>Converter.toRange(range);
+            const searchResult: theia.TextSearchMatch = {
+                uri: URI.parse(result.fileUri),
+                preview: {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    text: isObject(next.lineText) ? (<any>next.lineText).text : <string>next.lineText,
+                    matches: tRange
+                },
+                ranges: tRange
+            };
+            return searchResult;
+        }).forEach(next => this.searchInWorkspaceEmitter.fire({ result: next, searchId: searchRequestId }));
     }
 
     private deltaFolders(currentFolders: theia.WorkspaceFolder[] = [], newFolders: theia.WorkspaceFolder[] = []): {
@@ -180,6 +218,33 @@ export class WorkspaceExtImpl implements WorkspaceExt {
 
         return this.proxy.$startFileSearch(includePattern, includeFolderUri, excludePatternOrDisregardExcludes, maxResults, token)
             .then(data => Array.isArray(data) ? data.map(uri => URI.revive(uri)) : []);
+    }
+
+    findTextInFiles(query: theia.TextSearchQuery, optionsOrCallback: theia.FindTextInFilesOptions | ((result: theia.TextSearchResult) => void),
+        callbackOrToken?: CancellationToken | ((result: theia.TextSearchResult) => void), token?: CancellationToken): Promise<theia.TextSearchComplete> {
+        let options: theia.FindTextInFilesOptions;
+        let callback: (result: theia.TextSearchResult) => void;
+
+        if (typeof optionsOrCallback === 'object') {
+            options = optionsOrCallback;
+            callback = callbackOrToken as (result: theia.TextSearchResult) => void;
+        } else {
+            options = {};
+            callback = optionsOrCallback;
+            token = callbackOrToken as CancellationToken;
+        }
+        const nextSearchID = this.workspaceSearchSequence + 1;
+        const disposable = this.searchInWorkspaceEmitter.event(searchResult => {
+            if (searchResult.searchId === nextSearchID) {
+                callback(searchResult.result);
+            }
+        });
+        if (token) {
+            token.onCancellationRequested(() => {
+                disposable.dispose();
+            });
+        }
+        return this.proxy.$findTextInFiles(query, options || {}, nextSearchID, token);
     }
 
     createFileSystemWatcher(globPattern: theia.GlobPattern, ignoreCreateEvents?: boolean, ignoreChangeEvents?: boolean, ignoreDeleteEvents?: boolean): theia.FileSystemWatcher {
