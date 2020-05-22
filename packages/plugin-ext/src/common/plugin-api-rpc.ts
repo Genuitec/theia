@@ -67,7 +67,8 @@ import {
     FoldingRange,
     SelectionRange,
     CallHierarchyDefinition,
-    CallHierarchyReference
+    CallHierarchyReference,
+    SearchInWorkspaceResult
 } from './plugin-api-rpc-model';
 import { ExtPluginApi } from './plugin-ext-api-contribution';
 import { KeysToAnyValues, KeysToKeysToAnyValue } from './types';
@@ -494,6 +495,8 @@ export interface WorkspaceMain {
     $pickWorkspaceFolder(options: WorkspaceFolderPickOptionsMain): Promise<theia.WorkspaceFolder | undefined>;
     $startFileSearch(includePattern: string, includeFolder: string | undefined, excludePatternOrDisregardExcludes: string | false,
         maxResults: number | undefined, token: theia.CancellationToken): PromiseLike<UriComponents[]>;
+    $findTextInFiles(query: theia.TextSearchQuery, options: theia.FindTextInFilesOptions,
+        callback: (result: theia.TextSearchResult) => void, token?: theia.CancellationToken): Promise<theia.TextSearchComplete>
     $registerTextDocumentContentProvider(scheme: string): Promise<void>;
     $unregisterTextDocumentContentProvider(scheme: string): void;
     $onTextDocumentContentChange(uri: string, content: string): void;
@@ -508,6 +511,7 @@ export interface WorkspaceExt {
     $fileChanged(event: FileChangeEvent): void;
     $onFileRename(event: FileMoveEvent): void;
     $onWillRename(event: FileWillMoveEvent): Promise<any>;
+    $onTextSearchResult(result: SearchInWorkspaceResult): void;
 }
 
 export interface DialogsMain {

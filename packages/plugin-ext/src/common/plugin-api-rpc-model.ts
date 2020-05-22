@@ -551,3 +551,20 @@ export interface CallHierarchyOutgoingCall {
     to: CallHierarchyItem;
     fromRanges: Range[];
 }
+export interface SearchInWorkspaceResult {
+    root: string;
+    fileUri: string;
+    matches: SearchMatch[];
+}
+
+export interface SearchMatch {
+    line: number;
+    character: number;
+    length: number;
+    lineText: string | LinePreview;
+
+}
+export interface LinePreview {
+    text: string;
+    character: number;
+}
